@@ -23,19 +23,73 @@
 - Подключены провайдеры: OpenRouter (модель, формат OpenAI) и Tavily (поиск).
 - Модель по умолчанию — **дешёвая и надёжная** (`openai/gpt-4o-mini`): менять не требуется. Нужен OpenRouter-ключ с минимальным балансом (одна статья ≈ доли цента; ~$1 хватает на все тесты).
 - `Dockerfile` для деплоя на Railway (см. «Деплой»).
-- **Живой пруф каркаса:** бот отвечает на `/start` и эхом на любой текст (`plugins/agent-stub/index.js`) — без вызова модели.
+- **Живые пруфы каркаса** (`plugins/agent-stub/index.js`, без вызова модели):
+  - `/start` — приветствие;
+  - эхо на любой текст;
+  - **`/demo` — рабочий пример inline-кнопок** (рендер + клик + ответ). Это эталон механики, которую требует ТЗ — копируй отсюда.
 
 ## Что дописываешь ты (кандидат)
 
 Всё помечено `TODO(кандидат)` в [`plugins/agent-stub/index.js`](plugins/agent-stub/index.js):
 
 1. Приём темы из Telegram.
-2. Поиск источников через Tavily (`web_search` / `tavily_search`; ключ — `SEARCH_API_KEY`).
-3. Генерация статьи со ссылками через OpenRouter (`api.runtime.llm.complete`, формат OpenAI; ключ — `OPENROUTER_API_KEY`).
-4. Черновик в канал (`TELEGRAM_CHANNEL_ID`) с inline-кнопками [Опубликовать]/[Отклонить]
-   (`registerCommand` + `registerInteractiveHandler`).
+2. Поиск источников (провайдер Tavily; ключ — `SEARCH_API_KEY`).
+3. Генерация статьи со ссылками через OpenRouter (ключ — `OPENROUTER_API_KEY`).
+4. Черновик с inline-кнопками [Опубликовать]/[Отклонить] (механика — как в `/demo`).
 5. Доработка по замечанию человека.
-6. Публикация в канал **только после согласия** (нажатие кнопки).
+6. Публикация в канал (`TELEGRAM_CHANNEL_ID`) **только после согласия** (нажатие кнопки).
+
+## API-шпаргалка (реальные сигнатуры SDK)
+
+> Сверено по типам OpenClaw. Используй именно это — не угадывай.
+
+**LLM (OpenRouter):**
+```js
+const out = await api.runtime.llm.complete({
+  messages: [{ role: "user", content: prompt }],
+});
+const text = out.text;            // ответ в .text (НЕ choices[].message.content)
+```
+
+**Поиск источников:**
+```js
+const { result } = await api.runtime.webSearch.search({ args: { query: topic } });
+// провайдер tavily берётся из config; ключ — из SEARCH_API_KEY (мост в TAVILY_API_KEY).
+// result — объект провайдера (Record<string,unknown>); у tavily обычно result.results[] {url,title,content}.
+// Метода api.tools.web_search НЕ существует.
+```
+
+**Inline-кнопки (только из команды):**
+```js
+return {
+  text: "Черновик…",
+  presentation: {
+    blocks: [{ type: "buttons", buttons: [
+      { label: "Опубликовать", value: "editor:publish", style: "primary" },
+      { label: "Отклонить",    value: "editor:reject",  style: "danger"  },
+    ]}],
+  },
+};
+// value = "<namespace>:<действие>" (разделитель — первый ":"); callback ≤ 64 байта.
+```
+
+**Обработка клика:**
+```js
+api.registerInteractiveHandler({
+  channel: "telegram",
+  namespace: "editor",            // должен совпадать с префиксом value
+  handler: async (ctx) => {
+    const action = ctx.callback.payload;   // "publish" / "reject"
+    const who    = ctx.senderId;           // кто нажал
+    await ctx.respond.editMessage({ text: "…" });  // edit = без спама; есть .reply/.clearButtons
+    return { handled: true };
+  },
+});
+```
+
+**before_dispatch:** перехват входящего текста — `event.content` = текст, `event.senderId` = кто; вернуть `{ handled: true, text }` или ничего. **Кнопки тут нельзя** — только из команды.
+
+**Публикация в канал** (`process.env.TELEGRAM_CHANNEL_ID`): проще всего слать черновик+кнопки сразу в канал и редактировать по клику через `ctx.respond.editMessage`; либо отправлять готовый текст отдельным сообщением (outbound `sendMessage({ channel:"telegram", to, content })`).
 
 > **Важно:** эхо-хук `before_dispatch` в `plugins/agent-stub/index.js` — временная заглушка-пруф. **Удали его**, иначе он перехватит весь входящий текст и твой агент не запустится. Этот файл — твоя рабочая зона; «обвязку» (Dockerfile, `deploy/entrypoint.sh`, имена переменных, способ запуска) не меняй.
 
