@@ -1,7 +1,7 @@
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "openrouter/qwen/qwen3-next-80b-a3b-instruct:free" },
+      "model": { "primary": "openrouter/openai/gpt-4o-mini" },
       "thinkingDefault": "off"
     }
   },
