@@ -89,7 +89,19 @@ api.registerInteractiveHandler({
 
 **before_dispatch:** перехват входящего текста — `event.content` = текст, `event.senderId` = кто; вернуть `{ handled: true, text }` или ничего. **Кнопки тут нельзя** — только из команды.
 
-**Публикация в канал** (`process.env.TELEGRAM_CHANNEL_ID`): проще всего слать черновик+кнопки сразу в канал и редактировать по клику через `ctx.respond.editMessage`; либо отправлять готовый текст отдельным сообщением (outbound `sendMessage({ channel:"telegram", to, content })`).
+**Публикация в канал** — прямым вызовом Telegram Bot API токеном бота (отдельной обёртки у плагина нет; постит сам бот, он должен быть админом канала):
+```js
+await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    chat_id: process.env.TELEGRAM_CHANNEL_ID,
+    text: article,
+    disable_web_page_preview: true,   // пост чистым текстом, без авто-картинки от первой ссылки
+  }),
+});
+// ID канала формата -100XXXXXXXXXX (префикс -100 не дублировать).
+```
 
 > **Важно:** эхо-хук `before_dispatch` в `plugins/agent-stub/index.js` — временная заглушка-пруф. **Удали его**, иначе он перехватит весь входящий текст и твой агент не запустится. Этот файл — твоя рабочая зона; «обвязку» (Dockerfile, `deploy/entrypoint.sh`, имена переменных, способ запуска) не меняй.
 
